@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { Canvas } from '../types/canvas';
 
+// NEXT_PUBLIC_API_URL should be the base server URL e.g. http://localhost:5000
+// We append /api/canvases so all route calls (/, /:id) resolve correctly
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/canvases',
+  baseURL: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/canvases`,
 });
 
 export const createCanvas = async (name: string): Promise<Canvas> => {

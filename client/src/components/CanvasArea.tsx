@@ -84,21 +84,22 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                 const scaleX = node.scaleX();
                 const scaleY = node.scaleY();
 
-                // Reset scale on the node, bake it into width/height/radius
+                // Reset scale on the node — bake scale into geometry
                 node.scaleX(1);
                 node.scaleY(1);
 
-                const patch: any = {
+                const patch: Record<string, number> = {
                   x: node.x(),
                   y: node.y(),
                   rotation: node.rotation(),
                 };
 
                 if (element.type === 'rect') {
-                  patch.width = Math.max(5, element.width * scaleX);
-                  patch.height = Math.max(5, element.height * scaleY);
+                  // Read dimensions from node directly (avoids stale closure)
+                  patch.width = Math.max(5, (node as Konva.Rect).width() * scaleX);
+                  patch.height = Math.max(5, (node as Konva.Rect).height() * scaleY);
                 } else if (element.type === 'circle') {
-                  patch.radius = Math.max(5, element.radius * scaleX);
+                  patch.radius = Math.max(5, (node as Konva.Circle).radius() * scaleX);
                 }
 
                 dispatch({
@@ -107,6 +108,7 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                   patch,
                 });
               };
+
 
               if (element.type === 'rect') {
                 return (

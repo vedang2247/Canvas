@@ -12,4 +12,17 @@ const createCanvas = async (req, res, next) => {
   }
 };
 
-module.exports = { createCanvas };
+// GET /api/canvases
+// Returns lightweight summaries — no elements bloat on the list view.
+const listCanvases = async (req, res, next) => {
+  try {
+    const canvases = await Canvas.find({}, 'name createdAt updatedAt').sort({
+      updatedAt: -1,
+    });
+    res.status(200).json(canvases);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createCanvas, listCanvases };

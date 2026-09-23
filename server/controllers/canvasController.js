@@ -25,4 +25,19 @@ const listCanvases = async (req, res, next) => {
   }
 };
 
-module.exports = { createCanvas, listCanvases };
+// GET /api/canvases/:id
+const getCanvas = async (req, res, next) => {
+  try {
+    const canvas = await Canvas.findById(req.params.id);
+    if (!canvas) {
+      const err = new Error('Canvas not found');
+      err.statusCode = 404;
+      return next(err);
+    }
+    res.status(200).json(canvas);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createCanvas, listCanvases, getCanvas };

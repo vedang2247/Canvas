@@ -40,4 +40,24 @@ const getCanvas = async (req, res, next) => {
   }
 };
 
-module.exports = { createCanvas, listCanvases, getCanvas };
+// PUT /api/canvases/:id
+// `new: true`          → return the updated document, not the pre-update one.
+// `runValidators: true` → re-run Mongoose schema validators on the new data.
+const updateCanvas = async (req, res, next) => {
+  try {
+    const canvas = await Canvas.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
+    if (!canvas) {
+      const err = new Error('Canvas not found');
+      err.statusCode = 404;
+      return next(err);
+    }
+    res.status(200).json(canvas);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createCanvas, listCanvases, getCanvas, updateCanvas };

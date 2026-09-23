@@ -1,69 +1,93 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { listCanvases, createCanvas, deleteCanvas } from '@/services/canvasApi';
+import { Canvas } from '@/types/canvas';
 
 export default function Home() {
+  const [canvases, setCanvases] = useState<Canvas[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchCanvases();
+  }, []);
+
+  const fetchCanvases = async () => {
+    try {
+      const data = await listCanvases();
+      setCanvases(data);
+    } catch (error) {
+      console.error('Failed to fetch canvases:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateNew = async () => {
+    const name = prompt('Enter canvas name:');
+    if (!name) return;
+    try {
+      const newCanvas = await createCanvas(name);
+      router.push(`/canvas/${newCanvas._id}`);
+    } catch (error) {
+      console.error('Failed to create canvas:', error);
+      alert('Failed to create canvas');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this canvas?')) return;
+    try {
+      await deleteCanvas(id);
+      await fetchCanvases();
+    } catch (error) {
+      console.error('Failed to delete canvas:', error);
+      alert('Failed to delete canvas');
+    }
+  };
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <h1>My Canvases</h1>
+        <button 
+          onClick={handleCreateNew}
+          style={{ padding: '0.5rem 1rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          New Canvas
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p>Loading...</p>
+      ) : canvases.length === 0 ? (
+        <p>No canvases found. Create one to get started!</p>
+      ) : (
+        <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
+          {canvases.map(canvas => (
+            <div key={canvas._id} style={{ border: '1px solid #ddd', padding: '1rem', borderRadius: '8px' }}>
+              <h3 style={{ margin: '0 0 0.5rem 0' }}>{canvas.name}</h3>
+              <p style={{ color: '#666', fontSize: '0.875rem', margin: '0 0 1rem 0' }}>
+                Updated: {new Date(canvas.updatedAt).toLocaleDateString()}
+              </p>
+              <button 
+                onClick={() => router.push(`/canvas/${canvas._id}`)}
+                style={{ padding: '0.25rem 0.5rem', marginRight: '0.5rem', cursor: 'pointer' }}
+              >
+                Open
+              </button>
+              <button 
+                onClick={() => handleDelete(canvas._id)}
+                style={{ padding: '0.25rem 0.5rem', color: 'red', cursor: 'pointer' }}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      )}
     </div>
   );
 }

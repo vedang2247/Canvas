@@ -60,4 +60,19 @@ const updateCanvas = async (req, res, next) => {
   }
 };
 
-module.exports = { createCanvas, listCanvases, getCanvas, updateCanvas };
+// DELETE /api/canvases/:id
+const deleteCanvas = async (req, res, next) => {
+  try {
+    const canvas = await Canvas.findByIdAndDelete(req.params.id);
+    if (!canvas) {
+      const err = new Error('Canvas not found');
+      err.statusCode = 404;
+      return next(err);
+    }
+    res.status(200).json({ message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { createCanvas, listCanvases, getCanvas, updateCanvas, deleteCanvas };

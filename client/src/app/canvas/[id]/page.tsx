@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { getCanvas } from '@/services/canvasApi';
 import { ElementsProvider, useElements } from '@/context/ElementsContext';
 import Toolbar from '@/components/Toolbar';
 
-// These components will be built in later steps, placeholder for now
-const CanvasArea = () => <div style={{ flex: 1, border: '1px solid #ccc', margin: '0 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>[Canvas Area Placeholder]</div>;
+const CanvasArea = dynamic(() => import('@/components/CanvasArea'), { ssr: false });
 const PropertiesPanel = () => <div style={{ width: '300px', borderLeft: '1px solid #ccc', padding: '1rem' }}>[Properties Panel Placeholder]</div>;
 
 function EditorInner() {

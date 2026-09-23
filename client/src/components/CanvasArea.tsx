@@ -1,26 +1,79 @@
 'use client';
 
-import React from 'react';
-import { Stage, Layer, Rect, Circle, Text } from 'react-konva';
+import React, { useEffect, useRef } from 'react';
+import { Stage, Layer, Rect, Circle, Text, Transformer } from 'react-konva';
+import Konva from 'konva';
 import { useElements } from '@/context/ElementsContext';
 
-export default function CanvasArea() {
+interface CanvasAreaProps {
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+}
+
+export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProps) {
   const { elements } = useElements();
+  
+  // Ref for the Transformer
+  const transformerRef = useRef<Konva.Transformer>(null);
+  
+  // Ref map to store Konva nodes for each shape
+  const shapeRefs = useRef(new Map<string, Konva.Node>());
 
   // Sort elements by zIndex to ensure correct rendering order
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
+  // Deselect when clicking on empty canvas
+  const checkDeselect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    // clicked on empty area (the stage itself)
+    const clickedOnEmpty = e.target === e.target.getStage();
+    if (clickedOnEmpty) {
+      setSelectedId(null);
+    }
+  };
+
+  // Wire transformer to the selected shape
+  useEffect(() => {
+    if (selectedId) {
+      const selectedNode = shapeRefs.current.get(selectedId);
+      if (selectedNode && transformerRef.current) {
+        transformerRef.current.nodes([selectedNode]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    } else {
+      if (transformerRef.current) {
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    }
+  }, [selectedId, elements]); // also depend on elements in case the selected element changes size/position from outside
+
   return (
     <div style={{ flex: 1, backgroundColor: '#f9fafb', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'auto' }}>
       <div style={{ border: '1px solid #d1d5db', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
-        <Stage width={800} height={600}>
+        <Stage 
+          width={800} 
+          height={600}
+          onMouseDown={checkDeselect}
+          onTouchStart={checkDeselect}
+        >
           <Layer>
             {sortedElements.map((element) => {
+              const handleSelect = () => setSelectedId(element.id);
+              
+              const assignRef = (node: Konva.Node | null) => {
+                if (node) {
+                  shapeRefs.current.set(element.id, node);
+                } else {
+                  shapeRefs.current.delete(element.id);
+                }
+              };
+
               if (element.type === 'rect') {
                 return (
                   <Rect
                     key={element.id}
                     id={element.id}
+                    ref={assignRef}
                     x={element.x}
                     y={element.y}
                     width={element.width}
@@ -28,6 +81,8 @@ export default function CanvasArea() {
                     fill={element.fill}
                     rotation={element.rotation}
                     draggable={false}
+                    onClick={handleSelect}
+                    onTap={handleSelect}
                   />
                 );
               }
@@ -36,12 +91,15 @@ export default function CanvasArea() {
                   <Circle
                     key={element.id}
                     id={element.id}
+                    ref={assignRef}
                     x={element.x}
                     y={element.y}
                     radius={element.radius}
                     fill={element.fill}
                     rotation={element.rotation}
                     draggable={false}
+                    onClick={handleSelect}
+                    onTap={handleSelect}
                   />
                 );
               }
@@ -50,6 +108,7 @@ export default function CanvasArea() {
                   <Text
                     key={element.id}
                     id={element.id}
+                    ref={assignRef}
                     x={element.x}
                     y={element.y}
                     text={element.text}
@@ -57,11 +116,14 @@ export default function CanvasArea() {
                     fill={element.fill}
                     rotation={element.rotation}
                     draggable={false}
+                    onClick={handleSelect}
+                    onTap={handleSelect}
                   />
                 );
               }
               return null;
             })}
+            <Transformer ref={transformerRef} />
           </Layer>
         </Stage>
       </div>

@@ -17,6 +17,7 @@ function EditorInner() {
   
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { dispatch } = useElements();
 
   useEffect(() => {
@@ -45,7 +46,7 @@ function EditorInner() {
       </header>
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Toolbar />
-        <CanvasArea />
+        <CanvasArea selectedId={selectedId} setSelectedId={setSelectedId} />
         <PropertiesPanel />
       </div>
     </div>

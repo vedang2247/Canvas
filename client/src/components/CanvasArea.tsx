@@ -9,6 +9,7 @@ import { TextElement } from '@/types/canvas';
 interface CanvasAreaProps {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
+  stageRef: React.RefObject<Konva.Stage | null>;
 }
 
 interface TextareaState {
@@ -22,13 +23,12 @@ interface TextareaState {
   elementId: string;
 }
 
-export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProps) {
+export default function CanvasArea({ selectedId, setSelectedId, stageRef }: CanvasAreaProps) {
   const { elements, dispatch } = useElements();
 
   // Refs
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Node>());
-  const stageRef = useRef<Konva.Stage>(null);
   // Ref to the white bordered div that wraps the <Stage>
   const stageWrapRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

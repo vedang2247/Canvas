@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import type Konva from 'konva';
+import { useDebounce } from 'use-debounce';
 import { getCanvas, updateCanvas } from '@/services/canvasApi';
 import { ElementsProvider, useElements } from '@/context/ElementsContext';
 import Toolbar from '@/components/Toolbar';
@@ -11,7 +13,6 @@ import PropertiesPanel from '@/components/PropertiesPanel';
 // Dynamically import CanvasArea so Konva never runs server-side
 const CanvasArea = dynamic(() => import('@/components/CanvasArea'), { ssr: false });
 
-// ── Save indicator states ─────────────────────────────────────────────────
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 function EditorInner() {
@@ -23,12 +24,16 @@ function EditorInner() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  // Track whether the canvas has been initially loaded before allowing saves
   const isLoadedRef = useRef(false);
+  const lastSavedElementsStr = useRef<string>('[]');
+  const stageRef = useRef<Konva.Stage | null>(null);
 
   const { elements, dispatch } = useElements();
+  const [debouncedElements] = useDebounce(elements, 1500);
 
   // ── Load canvas on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -37,8 +42,8 @@ function EditorInner() {
       .then((canvas) => {
         setName(canvas.name);
         dispatch({ type: 'SET_ELEMENTS', elements: canvas.elements });
+        lastSavedElementsStr.current = JSON.stringify(canvas.elements);
         setIsLoading(false);
-        // Mark canvas as loaded AFTER state is set so autosave guard works
         setTimeout(() => { isLoadedRef.current = true; }, 0);
       })
       .catch((err) => {
@@ -48,15 +53,35 @@ function EditorInner() {
       });
   }, [id, dispatch]);
 
-  // ── Save function (shared by button and autosave) ──────────────────────
+  // ── Autosave ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!id || !isLoadedRef.current) return;
+    
+    const currentStr = JSON.stringify(debouncedElements);
+    if (currentStr === lastSavedElementsStr.current) return;
+
+    setAutosaveStatus('saving');
+    updateCanvas(id, { elements: debouncedElements })
+      .then(() => {
+        lastSavedElementsStr.current = currentStr;
+        setAutosaveStatus('saved');
+        setTimeout(() => setAutosaveStatus('idle'), 2000);
+      })
+      .catch((err) => {
+        console.error('Autosave failed:', err);
+        setAutosaveStatus('idle');
+      });
+  }, [debouncedElements, id]);
+
+  // ── Manual save ────────────────────────────────────────────────────────
   const save = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async () => {
       if (!id || !isLoadedRef.current) return;
-      if (!options?.silent) setSaveStatus('saving');
+      setSaveStatus('saving');
       try {
         await updateCanvas(id, { name, elements });
+        lastSavedElementsStr.current = JSON.stringify(elements);
         setSaveStatus('saved');
-        // Reset to idle after 2 s
         setTimeout(() => setSaveStatus('idle'), 2000);
       } catch (err) {
         console.error('Save failed:', err);
@@ -67,7 +92,19 @@ function EditorInner() {
     [id, name, elements]
   );
 
-  // ── Loading / error states ─────────────────────────────────────────────
+  // ── Export PNG ─────────────────────────────────────────────────────────
+  const handleExportPng = () => {
+    if (!stageRef.current) return;
+    const dataUrl = stageRef.current.toDataURL({ pixelRatio: 2 });
+    const link = document.createElement('a');
+    link.download = `${name || 'canvas'}.png`;
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ── UI States ──────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -90,7 +127,6 @@ function EditorInner() {
     );
   }
 
-  // ── Save indicator label ───────────────────────────────────────────────
   const saveLabel =
     saveStatus === 'saving' ? 'Saving…'
     : saveStatus === 'saved'  ? '✓ Saved'
@@ -109,7 +145,6 @@ function EditorInner() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* ── Header ── */}
       <header style={{
         padding: '0.625rem 1.25rem',
         borderBottom: '1px solid #e5e7eb',
@@ -120,7 +155,6 @@ function EditorInner() {
         zIndex: 10,
         gap: '1rem',
       }}>
-        {/* Left: home button + editable name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button
             onClick={() => router.push('/')}
@@ -137,7 +171,6 @@ function EditorInner() {
             ← Home
           </button>
 
-          {/* Step 39 — Editable canvas name */}
           <input
             type="text"
             value={name}
@@ -161,9 +194,30 @@ function EditorInner() {
           />
         </div>
 
-        {/* Right: save indicator + save button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Step 38 — Save button */}
+          {autosaveStatus === 'saved' && (
+            <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 500 }}>Autosaved</span>
+          )}
+          {autosaveStatus === 'saving' && (
+            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Saving...</span>
+          )}
+
+          <button
+            onClick={handleExportPng}
+            style={{
+              padding: '0.375rem 0.75rem',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              background: '#fff',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: '#374151',
+            }}
+          >
+            Export PNG
+          </button>
+
           <button
             id="btn-save"
             onClick={() => save()}
@@ -186,10 +240,9 @@ function EditorInner() {
         </div>
       </header>
 
-      {/* ── Editor body ── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Toolbar />
-        <CanvasArea selectedId={selectedId} setSelectedId={setSelectedId} />
+        <CanvasArea selectedId={selectedId} setSelectedId={setSelectedId} stageRef={stageRef} />
         <PropertiesPanel selectedId={selectedId} setSelectedId={setSelectedId} />
       </div>
     </div>

@@ -46,7 +46,7 @@ const getCanvas = async (req, res, next) => {
 const updateCanvas = async (req, res, next) => {
   try {
     const canvas = await Canvas.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
     if (!canvas) {

@@ -104,11 +104,38 @@ function EditorInner() {
     document.body.removeChild(link);
   };
 
+  // ── Keyboard Shortcuts ──────────────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't delete if user is typing in an input or textarea
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA'
+      ) {
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        dispatch({ type: 'DELETE_ELEMENT', id: selectedId });
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, dispatch]);
+
   // ── UI States ──────────────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <p>Loading canvas…</p>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f9fafb' }}>
+        <header style={{ height: '60px', borderBottom: '1px solid #e5e7eb', background: '#fff' }}></header>
+        <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '50%',
+            border: '3px solid #e5e7eb', borderTopColor: '#6366f1',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+        </div>
       </div>
     );
   }

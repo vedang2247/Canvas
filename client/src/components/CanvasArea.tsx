@@ -36,6 +36,23 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
   // Text editing state — kept local since positioning depends on the stage DOM node
   const [editingState, setEditingState] = useState<TextareaState | null>(null);
 
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setDimensions({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
   // ── Deselect on empty stage click ────────────────────────────────────────
@@ -165,29 +182,32 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
 
   return (
     // Outer flex container — fills remaining editor space
-    <div style={{
-      flex: 1,
-      backgroundColor: '#f3f4f6',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      overflow: 'auto',
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        flex: 1,
+        backgroundColor: '#f3f4f6',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
       {/* Stage wrapper — position:relative so textarea overlay is positioned within it */}
       <div
         ref={stageWrapRef}
         style={{
           position: 'relative',
-          border: '1px solid #d1d5db',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
           background: '#ffffff',
           lineHeight: 0, // prevent extra space below canvas element
+          width: '100%',
+          height: '100%',
         }}
       >
         <Stage
           ref={stageRef}
-          width={800}
-          height={600}
+          width={dimensions.width}
+          height={dimensions.height}
           onMouseDown={checkDeselect}
           onTouchStart={checkDeselect}
         >
@@ -305,7 +325,7 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
               overflow: 'hidden',
               zIndex: 100,
               // Prevent the textarea from being larger than the canvas
-              maxWidth: 800 - editingState.x,
+              maxWidth: dimensions.width - editingState.x,
             }}
           />
         )}

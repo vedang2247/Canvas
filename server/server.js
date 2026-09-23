@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const canvasRouter = require('./routes/canvases');
 const errorHandler = require('./middleware/errorHandler');
@@ -13,8 +14,15 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000' }));
 app.use(express.json());
 
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests, please try again later.' }
+});
+
 // Routes
-app.use('/api/canvases', canvasRouter);
+app.use('/api/canvases', apiLimiter, canvasRouter);
 
 // Error Handler (must be last)
 app.use(errorHandler);

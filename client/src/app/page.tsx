@@ -8,6 +8,7 @@ import { Canvas } from '@/types/canvas';
 export default function Home() {
   const [canvases, setCanvases] = useState<Canvas[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -28,12 +29,14 @@ export default function Home() {
   const handleCreateNew = async () => {
     const name = prompt('Enter canvas name:');
     if (!name) return;
+    setIsCreating(true);
     try {
       const newCanvas = await createCanvas(name);
       router.push(`/canvas/${newCanvas._id}`);
     } catch (error) {
       console.error('Failed to create canvas:', error);
       alert('Failed to create canvas');
+      setIsCreating(false);
     }
   };
 
@@ -54,14 +57,36 @@ export default function Home() {
         <h1>My Canvases</h1>
         <button 
           onClick={handleCreateNew}
-          style={{ padding: '0.5rem 1rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          disabled={isCreating}
+          style={{ 
+            padding: '0.5rem 1rem', 
+            background: isCreating ? '#9ca3af' : '#6366f1', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '4px', 
+            cursor: isCreating ? 'not-allowed' : 'pointer' 
+          }}
         >
-          New Canvas
+          {isCreating ? 'Creating...' : 'New Canvas'}
         </button>
       </div>
 
       {isLoading ? (
-        <p>Loading...</p>
+        <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))' }}>
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} style={{ border: '1px solid #e5e7eb', padding: '1rem', borderRadius: '8px', background: '#f9fafb', height: '120px', animation: 'pulse 1.5s infinite ease-in-out' }}>
+              <div style={{ height: '1.25rem', background: '#e5e7eb', borderRadius: '4px', width: '60%', marginBottom: '0.5rem' }}></div>
+              <div style={{ height: '0.875rem', background: '#e5e7eb', borderRadius: '4px', width: '40%' }}></div>
+            </div>
+          ))}
+          <style>{`
+            @keyframes pulse {
+              0% { opacity: 1; }
+              50% { opacity: 0.5; }
+              100% { opacity: 1; }
+            }
+          `}</style>
+        </div>
       ) : canvases.length === 0 ? (
         <p>No canvases found. Create one to get started!</p>
       ) : (

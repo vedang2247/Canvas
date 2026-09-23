@@ -11,7 +11,7 @@ interface CanvasAreaProps {
 }
 
 export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProps) {
-  const { elements } = useElements();
+  const { elements, dispatch } = useElements();
   
   // Ref for the Transformer
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -68,6 +68,46 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                 }
               };
 
+              const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+                dispatch({
+                  type: 'UPDATE_ELEMENT',
+                  id: element.id,
+                  patch: {
+                    x: e.target.x(),
+                    y: e.target.y(),
+                  },
+                });
+              };
+
+              const handleTransformEnd = (e: Konva.KonvaEventObject<Event>) => {
+                const node = e.target;
+                const scaleX = node.scaleX();
+                const scaleY = node.scaleY();
+
+                // Reset scale on the node, bake it into width/height/radius
+                node.scaleX(1);
+                node.scaleY(1);
+
+                const patch: any = {
+                  x: node.x(),
+                  y: node.y(),
+                  rotation: node.rotation(),
+                };
+
+                if (element.type === 'rect') {
+                  patch.width = Math.max(5, element.width * scaleX);
+                  patch.height = Math.max(5, element.height * scaleY);
+                } else if (element.type === 'circle') {
+                  patch.radius = Math.max(5, element.radius * scaleX);
+                }
+
+                dispatch({
+                  type: 'UPDATE_ELEMENT',
+                  id: element.id,
+                  patch,
+                });
+              };
+
               if (element.type === 'rect') {
                 return (
                   <Rect
@@ -80,9 +120,11 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                     height={element.height}
                     fill={element.fill}
                     rotation={element.rotation}
-                    draggable={false}
+                    draggable={true}
                     onClick={handleSelect}
                     onTap={handleSelect}
+                    onDragEnd={handleDragEnd}
+                    onTransformEnd={handleTransformEnd}
                   />
                 );
               }
@@ -97,9 +139,11 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                     radius={element.radius}
                     fill={element.fill}
                     rotation={element.rotation}
-                    draggable={false}
+                    draggable={true}
                     onClick={handleSelect}
                     onTap={handleSelect}
+                    onDragEnd={handleDragEnd}
+                    onTransformEnd={handleTransformEnd}
                   />
                 );
               }
@@ -115,9 +159,11 @@ export default function CanvasArea({ selectedId, setSelectedId }: CanvasAreaProp
                     fontSize={element.fontSize}
                     fill={element.fill}
                     rotation={element.rotation}
-                    draggable={false}
+                    draggable={true}
                     onClick={handleSelect}
                     onTap={handleSelect}
+                    onDragEnd={handleDragEnd}
+                    onTransformEnd={handleTransformEnd}
                   />
                 );
               }

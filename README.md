@@ -93,3 +93,11 @@ Base URL: `http://localhost:5000/api/canvases`
 - **Text editing coordinate accuracy:** At non-default browser zooms, native HTML `<textarea>` overlays might experience minor offset misalignments with the underlying Konva canvas coordinates.
 - **No Undo/Redo:** History management (Ctrl+Z / Ctrl+Y) is not currently implemented.
 - **Single-user:** There is no real-time collaboration (WebSockets/Yjs) implemented. If multiple users edit the same canvas simultaneously, the last save operation overwrites the state.
+
+## Bonus Features Implemented
+
+- **Debounced Autosave:** Changes to the canvas are automatically persisted to the server 1.5 seconds after the last edit, guarded by an `isLoaded` flag to prevent spurious saves on initial page load.
+- **PNG Export:** A high-resolution (2× pixel ratio) PNG is exported via `stage.toDataURL()` and downloaded automatically using a temporary anchor element.
+- **Keyboard Delete Shortcut:** Pressing `Delete` or `Backspace` with a shape selected removes it instantly (ignored when focus is in an input or textarea).
+- **Enter-to-Commit Text Edit:** While editing a text element's overlay textarea, pressing `Enter` (without `Shift`) commits the edit. `Shift+Enter` inserts a newline. `Escape` discards changes.
+- **Rate Limiting:** The Express API applies a 100 requests/minute per-IP rate limit using `express-rate-limit`.

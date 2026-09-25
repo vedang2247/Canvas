@@ -9,7 +9,7 @@ interface ElementsContextType {
   dispatch: React.Dispatch<Action>;
 }
 
-const ElementsContext = createContext<ElementsContextType | undefined>(undefined);
+export const ElementsContext = createContext<ElementsContextType | undefined>(undefined);
 
 export function ElementsProvider({ children }: { children: ReactNode }) {
   const [elements, dispatch] = useReducer(elementsReducer, []);

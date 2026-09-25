@@ -15,6 +15,7 @@ out/
 # Build outputs
 dist/
 build/
+tsconfig.tsbuildinfo
 
 # OS files
 .DS_Store

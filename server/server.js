@@ -10,9 +10,28 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Support multiple allowed origins (comma-separated in CLIENT_ORIGIN)
+const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 // Middleware
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000' }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. server-to-server, curl)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: origin '${origin}' not allowed`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
+
+// Health check — used by Render to verify the service is running
+app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }));
 
 // Rate limiting
 const apiLimiter = rateLimit({
@@ -29,7 +48,7 @@ app.use(errorHandler);
 
 // Connect to MongoDB and start server
 mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/caanvas')
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log('Connected to MongoDB');
     app.listen(PORT, () => {

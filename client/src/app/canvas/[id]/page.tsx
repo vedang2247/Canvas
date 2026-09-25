@@ -10,7 +10,7 @@ import { ElementsProvider, useElements } from '@/context/ElementsContext';
 import Toolbar from '@/components/Toolbar';
 import PropertiesPanel from '@/components/PropertiesPanel';
 
-// Dynamically import CanvasArea so Konva never runs server-side
+// Dynamically import CanvasArea — Konva requires the browser DOM (no SSR)
 const CanvasArea = dynamic(() => import('@/components/CanvasArea'), { ssr: false });
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -24,26 +24,26 @@ function EditorInner() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [autosaveLabel, setAutosaveLabel] = useState('');
 
   const isLoadedRef = useRef(false);
-  const lastSavedElementsStr = useRef<string>('[]');
+  const lastSavedStr = useRef<string>('');
   const stageRef = useRef<Konva.Stage | null>(null);
 
   const { elements, dispatch } = useElements();
   const [debouncedElements] = useDebounce(elements, 1500);
 
-  // ── Load canvas on mount ───────────────────────────────────────────────
+  // ── Load canvas ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id) return;
     getCanvas(id)
       .then((canvas) => {
         setName(canvas.name);
         dispatch({ type: 'SET_ELEMENTS', elements: canvas.elements });
-        lastSavedElementsStr.current = JSON.stringify(canvas.elements);
+        lastSavedStr.current = JSON.stringify(canvas.elements);
         setIsLoading(false);
+        // Guard against autosave firing before first load settles
         setTimeout(() => { isLoadedRef.current = true; }, 0);
       })
       .catch((err) => {
@@ -56,44 +56,39 @@ function EditorInner() {
   // ── Autosave ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id || !isLoadedRef.current) return;
-    
     const currentStr = JSON.stringify(debouncedElements);
-    if (currentStr === lastSavedElementsStr.current) return;
+    if (currentStr === lastSavedStr.current) return;
 
-    setAutosaveStatus('saving');
+    setAutosaveLabel('Saving…');
     updateCanvas(id, { elements: debouncedElements })
       .then(() => {
-        lastSavedElementsStr.current = currentStr;
-        setAutosaveStatus('saved');
-        setTimeout(() => setAutosaveStatus('idle'), 2000);
+        lastSavedStr.current = currentStr;
+        setAutosaveLabel('Autosaved ✓');
+        setTimeout(() => setAutosaveLabel(''), 2500);
       })
-      .catch((err) => {
-        console.error('Autosave failed:', err);
-        setAutosaveStatus('idle');
+      .catch(() => {
+        setAutosaveLabel('Autosave failed');
+        setTimeout(() => setAutosaveLabel(''), 3000);
       });
   }, [debouncedElements, id]);
 
   // ── Manual save ────────────────────────────────────────────────────────
-  const save = useCallback(
-    async () => {
-      if (!id || !isLoadedRef.current) return;
-      setSaveStatus('saving');
-      try {
-        await updateCanvas(id, { name, elements });
-        lastSavedElementsStr.current = JSON.stringify(elements);
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
-      } catch (err) {
-        console.error('Save failed:', err);
-        setSaveStatus('error');
-        setTimeout(() => setSaveStatus('idle'), 3000);
-      }
-    },
-    [id, name, elements]
-  );
+  const save = useCallback(async () => {
+    if (!id || !isLoadedRef.current) return;
+    setSaveStatus('saving');
+    try {
+      await updateCanvas(id, { name, elements });
+      lastSavedStr.current = JSON.stringify(elements);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  }, [id, name, elements]);
 
   // ── Export PNG ─────────────────────────────────────────────────────────
-  const handleExportPng = () => {
+  const exportPng = () => {
     if (!stageRef.current) return;
     const dataUrl = stageRef.current.toDataURL({ pixelRatio: 2 });
     const link = document.createElement('a');
@@ -104,49 +99,52 @@ function EditorInner() {
     document.body.removeChild(link);
   };
 
-  // ── Keyboard Shortcuts ──────────────────────────────────────────────────
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't delete if user is typing in an input or textarea
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
-      ) {
-        return;
-      }
+    const onKey = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         dispatch({ type: 'DELETE_ELEMENT', id: selectedId });
         setSelectedId(null);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, dispatch]);
 
-  // ── UI States ──────────────────────────────────────────────────────────
+  // ── Loading spinner ────────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f9fafb' }}>
-        <header style={{ height: '60px', borderBottom: '1px solid #e5e7eb', background: '#fff' }}></header>
-        <div style={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#fff' }}>
+        <header style={{ height: '60px', borderBottom: '1px solid var(--border)', background: '#fff' }} />
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '1rem' }}>
           <div style={{
-            width: '40px', height: '40px', borderRadius: '50%',
-            border: '3px solid #e5e7eb', borderTopColor: '#6366f1',
-            animation: 'spin 1s linear infinite'
-          }}></div>
-          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+            width: '44px', height: '44px', borderRadius: '50%',
+            border: '3px solid var(--border)', borderTopColor: 'var(--accent)',
+            animation: 'editorSpin 0.8s linear infinite',
+          }} />
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Loading canvas…</p>
+          <style>{`@keyframes editorSpin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
     );
   }
 
+  // ── Error state ────────────────────────────────────────────────────────
   if (loadError) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', gap: '1rem' }}>
-        <p style={{ color: '#dc2626' }}>Canvas not found or failed to load.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', gap: '1rem', background: '#fff' }}>
+        <div style={{ fontSize: '3rem' }}>⚠️</div>
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-primary)' }}>Canvas not found</h2>
+        <p style={{ color: 'var(--text-secondary)' }}>This canvas may have been deleted or the link is invalid.</p>
         <button
           onClick={() => router.push('/')}
-          style={{ padding: '0.5rem 1rem', cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: '6px' }}
+          style={{
+            padding: '0.5rem 1.25rem', background: 'var(--accent)',
+            color: '#fff', border: 'none', borderRadius: '8px',
+            fontWeight: 600, cursor: 'pointer',
+          }}
         >
           ← Back to Home
         </button>
@@ -154,6 +152,7 @@ function EditorInner() {
     );
   }
 
+  // ── Save button label/style ────────────────────────────────────────────
   const saveLabel =
     saveStatus === 'saving' ? 'Saving…'
     : saveStatus === 'saved'  ? '✓ Saved'
@@ -161,105 +160,123 @@ function EditorInner() {
     : 'Save';
 
   const saveBg =
-    saveStatus === 'saved' ? '#d1fae5'
-    : saveStatus === 'error' ? '#fee2e2'
-    : '#6366f1';
+    saveStatus === 'saved'  ? 'var(--success-light)'
+    : saveStatus === 'error' ? 'var(--danger-light)'
+    : 'var(--accent)';
 
   const saveColor =
-    saveStatus === 'saved' ? '#065f46'
-    : saveStatus === 'error' ? '#dc2626'
-    : '#ffffff';
+    saveStatus === 'saved'  ? 'var(--success)'
+    : saveStatus === 'error' ? 'var(--danger)'
+    : '#fff';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+
+      {/* ── Header ── */}
       <header style={{
-        padding: '0.625rem 1.25rem',
-        borderBottom: '1px solid #e5e7eb',
+        padding: '0 1.25rem',
+        height: '56px',
+        minHeight: '56px',
+        borderBottom: '1px solid var(--border)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         background: '#fff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
         zIndex: 10,
         gap: '1rem',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Left */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '0 0 auto' }}>
           <button
             onClick={() => router.push('/')}
             style={{
-              padding: '0.375rem 0.75rem',
-              border: '1px solid #d1d5db',
+              padding: '0.35rem 0.75rem',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              cursor: 'pointer',
               background: '#f9fafb',
-              fontSize: '0.875rem',
+              fontSize: '0.82rem',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
               whiteSpace: 'nowrap',
+              transition: 'background 0.15s',
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent-light)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#f9fafb')}
           >
             ← Home
           </button>
 
+          {/* Editable canvas name */}
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-label="Canvas name"
             style={{
-              fontSize: '1rem',
-              fontWeight: 600,
-              color: '#111827',
+              fontSize: '1rem', fontWeight: 700,
+              color: 'var(--text-primary)',
               border: 'none',
               borderBottom: '2px solid transparent',
-              outline: 'none',
-              background: 'transparent',
-              padding: '0.25rem 0.125rem',
-              minWidth: '160px',
-              maxWidth: '320px',
+              outline: 'none', background: 'transparent',
+              padding: '0.2rem 0.125rem',
+              minWidth: '140px', maxWidth: '300px',
               transition: 'border-color 0.15s',
             }}
-            onFocus={(e) => (e.target.style.borderBottomColor = '#6366f1')}
+            onFocus={(e) => (e.target.style.borderBottomColor = 'var(--accent)')}
             onBlur={(e) => (e.target.style.borderBottomColor = 'transparent')}
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {autosaveStatus === 'saved' && (
-            <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 500 }}>Autosaved</span>
-          )}
-          {autosaveStatus === 'saving' && (
-            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Saving...</span>
+        {/* Right */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flex: '0 0 auto' }}>
+          {autosaveLabel && (
+            <span style={{
+              fontSize: '0.75rem',
+              color: autosaveLabel.includes('failed') ? 'var(--danger)' : 'var(--text-secondary)',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+            }}>
+              {autosaveLabel}
+            </span>
           )}
 
           <button
-            onClick={handleExportPng}
+            onClick={exportPng}
             style={{
-              padding: '0.375rem 0.75rem',
-              border: '1px solid #d1d5db',
+              padding: '0.35rem 0.875rem',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              cursor: 'pointer',
               background: '#fff',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: '#374151',
+              fontSize: '0.82rem', fontWeight: 500,
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+              whiteSpace: 'nowrap',
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#f9fafb')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
           >
             Export PNG
           </button>
 
           <button
             id="btn-save"
-            onClick={() => save()}
+            onClick={save}
             disabled={saveStatus === 'saving'}
             style={{
-              padding: '0.375rem 1rem',
+              padding: '0.35rem 1rem',
               background: saveBg,
               color: saveColor,
               border: 'none',
               borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '0.82rem',
               cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem',
               transition: 'background 0.2s, color 0.2s',
-              minWidth: '80px',
+              minWidth: '72px',
+              whiteSpace: 'nowrap',
             }}
           >
             {saveLabel}
@@ -267,6 +284,7 @@ function EditorInner() {
         </div>
       </header>
 
+      {/* ── Editor body ── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Toolbar />
         <CanvasArea selectedId={selectedId} setSelectedId={setSelectedId} stageRef={stageRef} />

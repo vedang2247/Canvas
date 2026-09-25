@@ -9,7 +9,7 @@ import { TextElement } from '@/types/canvas';
 interface CanvasAreaProps {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
-  stageRef: React.RefObject<Konva.Stage | null>;
+  stageRef: React.MutableRefObject<Konva.Stage | null>;
 }
 
 interface TextareaState {
@@ -26,41 +26,36 @@ interface TextareaState {
 export default function CanvasArea({ selectedId, setSelectedId, stageRef }: CanvasAreaProps) {
   const { elements, dispatch } = useElements();
 
-  // Refs
   const transformerRef = useRef<Konva.Transformer>(null);
   const shapeRefs = useRef(new Map<string, Konva.Node>());
-  // Ref to the white bordered div that wraps the <Stage>
-  const stageWrapRef = useRef<HTMLDivElement>(null);
+  // Ref to the outer flex-fill container — we measure this for stage dimensions
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Text editing state — kept local since positioning depends on the stage DOM node
   const [editingState, setEditingState] = useState<TextareaState | null>(null);
-
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const containerRef = useRef<HTMLDivElement>(null);
 
+  // ── Responsive Stage ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setDimensions({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
-      }
-    });
-    observer.observe(containerRef.current);
+    const el = containerRef.current;
+    if (!el) return;
+
+    const update = () =>
+      setDimensions({ width: el.clientWidth, height: el.clientHeight });
+
+    // Measure immediately after mount (avoids 0×0 on first render)
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
 
-  // ── Deselect on empty stage click ────────────────────────────────────────
+  // ── Deselect on empty stage click ─────────────────────────────────────────
   const checkDeselect = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
-    const clickedOnEmpty = e.target === e.target.getStage();
-    if (clickedOnEmpty) {
-      setSelectedId(null);
-    }
+    if (e.target === e.target.getStage()) setSelectedId(null);
   };
 
   // ── Wire Transformer to selected node ────────────────────────────────────
@@ -72,70 +67,70 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
         transformerRef.current.getLayer()?.batchDraw();
       }
     } else {
-      if (transformerRef.current) {
-        transformerRef.current.nodes([]);
-        transformerRef.current.getLayer()?.batchDraw();
-      }
+      transformerRef.current?.nodes([]);
+      transformerRef.current?.getLayer()?.batchDraw();
     }
   }, [selectedId, elements]);
 
   // ── Focus textarea when editing starts ───────────────────────────────────
   useEffect(() => {
-    if (editingState) {
-      // Small delay so the textarea is mounted before we focus
-      setTimeout(() => textareaRef.current?.focus(), 0);
-    }
+    if (editingState) setTimeout(() => textareaRef.current?.focus(), 0);
   }, [editingState]);
 
-  // ── Text double-click handler ─────────────────────────────────────────────
+  // ── Text double-click ─────────────────────────────────────────────────────
   const handleTextDblClick = (
     e: Konva.KonvaEventObject<MouseEvent>,
     element: TextElement
   ) => {
-    // Hide the Konva text node while editing
     const textNode = e.target as Konva.Text;
     const absPos = textNode.getAbsolutePosition();
-
-    // Use node's scale-aware width (min 100px so it doesn't collapse)
-    const nodeWidth = Math.max(100, textNode.width());
 
     setEditingState({
       elementId: element.id,
       x: absPos.x,
       y: absPos.y,
-      width: nodeWidth,
+      width: Math.max(120, textNode.width()),
       fontSize: element.fontSize,
       fill: element.fill,
       rotation: element.rotation,
       text: element.text,
     });
 
-    // Clear transformer while editing so handles don't interfere
-    if (transformerRef.current) {
-      transformerRef.current.nodes([]);
-      transformerRef.current.getLayer()?.batchDraw();
-    }
+    // Deselect so the transformer useEffect clears handles correctly
+    setSelectedId(null);
+
+    // Also imperatively clear transformer while textarea is open
+    transformerRef.current?.nodes([]);
+    transformerRef.current?.getLayer()?.batchDraw();
   };
 
   // ── Commit text on blur ───────────────────────────────────────────────────
-  const handleTextareaBlur = (e: React.FocusEvent<HTMLTextAreaElement>) => {
-    if (!editingState) return;
+  const commitTextEdit = (state: TextareaState) => {
     dispatch({
       type: 'UPDATE_ELEMENT',
-      id: editingState.elementId,
-      patch: { text: e.target.value },
+      id: state.elementId,
+      // Read from controlled state — source of truth after textarea onChange
+      patch: { text: state.text },
     });
     setEditingState(null);
   };
 
-  // Prevent accidental newline on Enter — commit instead
+  const handleTextareaBlur = () => {
+    if (editingState) commitTextEdit(editingState);
+  };
+
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Escape') {
-      setEditingState(null);
+      setEditingState(null); // discard — text node retains original value
+    }
+    // Plain Enter commits; Shift+Enter inserts a newline
+    if (e.key === 'Enter' && !e.shiftKey && editingState) {
+      e.preventDefault();
+      commitTextEdit(editingState);
     }
   };
 
-  // ── Shared per-element handlers ───────────────────────────────────────────
+  // ── Per-element event handlers ────────────────────────────────────────────
   const makeHandlers = (element: (typeof sortedElements)[number]) => {
     const handleSelect = () => setSelectedId(element.id);
 
@@ -156,8 +151,6 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
       const node = e.target;
       const scaleX = node.scaleX();
       const scaleY = node.scaleY();
-
-      // Bake scale into geometry — reset to 1
       node.scaleX(1);
       node.scaleY(1);
 
@@ -181,155 +174,156 @@ export default function CanvasArea({ selectedId, setSelectedId, stageRef }: Canv
   };
 
   return (
-    // Outer flex container — fills remaining editor space
     <div
       ref={containerRef}
       style={{
         flex: 1,
-        backgroundColor: '#f3f4f6',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
+        position: 'relative', // textarea overlay anchors to this
         overflow: 'hidden',
+        background: '#f1f3f7',
+        // Subtle grid background
+        backgroundImage:
+          'radial-gradient(circle, #d1d5db 1px, transparent 1px)',
+        backgroundSize: '24px 24px',
       }}
     >
-      {/* Stage wrapper — position:relative so textarea overlay is positioned within it */}
-      <div
-        ref={stageWrapRef}
-        style={{
-          position: 'relative',
-          background: '#ffffff',
-          lineHeight: 0, // prevent extra space below canvas element
-          width: '100%',
-          height: '100%',
-        }}
+      <Stage
+        ref={stageRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        onMouseDown={checkDeselect}
+        onTouchStart={checkDeselect}
       >
-        <Stage
-          ref={stageRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          onMouseDown={checkDeselect}
-          onTouchStart={checkDeselect}
-        >
-          <Layer>
-            {sortedElements.map((element) => {
-              const { handleSelect, assignRef, handleDragEnd, handleTransformEnd } =
-                makeHandlers(element);
+        <Layer>
+          {sortedElements.map((element) => {
+            const { handleSelect, assignRef, handleDragEnd, handleTransformEnd } =
+              makeHandlers(element);
+            const isEditing = editingState?.elementId === element.id;
 
-              // Hide text node while its textarea overlay is active
-              const isEditing = editingState?.elementId === element.id;
+            if (element.type === 'rect') {
+              return (
+                <Rect
+                  key={element.id}
+                  id={element.id}
+                  ref={assignRef}
+                  x={element.x}
+                  y={element.y}
+                  width={element.width}
+                  height={element.height}
+                  fill={element.fill}
+                  rotation={element.rotation}
+                  shadowBlur={selectedId === element.id ? 8 : 0}
+                  shadowColor="rgba(99,102,241,0.4)"
+                  draggable
+                  onClick={handleSelect}
+                  onTap={handleSelect}
+                  onDragEnd={handleDragEnd}
+                  onTransformEnd={handleTransformEnd}
+                />
+              );
+            }
 
-              if (element.type === 'rect') {
-                return (
-                  <Rect
-                    key={element.id}
-                    id={element.id}
-                    ref={assignRef}
-                    x={element.x}
-                    y={element.y}
-                    width={element.width}
-                    height={element.height}
-                    fill={element.fill}
-                    rotation={element.rotation}
-                    draggable
-                    onClick={handleSelect}
-                    onTap={handleSelect}
-                    onDragEnd={handleDragEnd}
-                    onTransformEnd={handleTransformEnd}
-                  />
-                );
-              }
+            if (element.type === 'circle') {
+              return (
+                <Circle
+                  key={element.id}
+                  id={element.id}
+                  ref={assignRef}
+                  x={element.x}
+                  y={element.y}
+                  radius={element.radius}
+                  fill={element.fill}
+                  rotation={element.rotation}
+                  shadowBlur={selectedId === element.id ? 8 : 0}
+                  shadowColor="rgba(99,102,241,0.4)"
+                  draggable
+                  onClick={handleSelect}
+                  onTap={handleSelect}
+                  onDragEnd={handleDragEnd}
+                  onTransformEnd={handleTransformEnd}
+                />
+              );
+            }
 
-              if (element.type === 'circle') {
-                return (
-                  <Circle
-                    key={element.id}
-                    id={element.id}
-                    ref={assignRef}
-                    x={element.x}
-                    y={element.y}
-                    radius={element.radius}
-                    fill={element.fill}
-                    rotation={element.rotation}
-                    draggable
-                    onClick={handleSelect}
-                    onTap={handleSelect}
-                    onDragEnd={handleDragEnd}
-                    onTransformEnd={handleTransformEnd}
-                  />
-                );
-              }
+            if (element.type === 'text') {
+              return (
+                <Text
+                  key={element.id}
+                  id={element.id}
+                  ref={assignRef}
+                  x={element.x}
+                  y={element.y}
+                  text={element.text}
+                  fontSize={element.fontSize}
+                  fill={element.fill}
+                  rotation={element.rotation}
+                  visible={!isEditing}
+                  draggable
+                  onClick={handleSelect}
+                  onTap={handleSelect}
+                  onDragEnd={handleDragEnd}
+                  onTransformEnd={handleTransformEnd}
+                  onDblClick={(e) => handleTextDblClick(e, element)}
+                  onDblTap={(e) =>
+                    handleTextDblClick(
+                      e as unknown as Konva.KonvaEventObject<MouseEvent>,
+                      element
+                    )
+                  }
+                />
+              );
+            }
 
-              if (element.type === 'text') {
-                return (
-                  <Text
-                    key={element.id}
-                    id={element.id}
-                    ref={assignRef}
-                    x={element.x}
-                    y={element.y}
-                    text={element.text}
-                    fontSize={element.fontSize}
-                    fill={element.fill}
-                    rotation={element.rotation}
-                    // Hide the Konva node while the textarea overlay is active
-                    visible={!isEditing}
-                    draggable
-                    onClick={handleSelect}
-                    onTap={handleSelect}
-                    onDragEnd={handleDragEnd}
-                    onTransformEnd={handleTransformEnd}
-                    onDblClick={(e) =>
-                      handleTextDblClick(e, element)
-                    }
-                    onDblTap={(e) =>
-                      handleTextDblClick(e as unknown as Konva.KonvaEventObject<MouseEvent>, element)
-                    }
-                  />
-                );
-              }
+            return null;
+          })}
 
-              return null;
-            })}
-
-            <Transformer ref={transformerRef} />
-          </Layer>
-        </Stage>
-
-        {/* ── HTML textarea overlay ── */}
-        {editingState && (
-          <textarea
-            ref={textareaRef}
-            defaultValue={editingState.text}
-            onBlur={handleTextareaBlur}
-            onKeyDown={handleTextareaKeyDown}
-            style={{
-              position: 'absolute',
-              top: editingState.y,
-              left: editingState.x,
-              width: editingState.width + 20, // a little breathing room
-              minHeight: editingState.fontSize + 8,
-              fontSize: editingState.fontSize,
-              color: editingState.fill,
-              transform: `rotate(${editingState.rotation}deg)`,
-              transformOrigin: 'top left',
-              // Match canvas aesthetic — transparent so canvas background shows through
-              background: 'transparent',
-              border: '1px dashed #6366f1',
-              outline: 'none',
-              resize: 'none',
-              padding: 0,
-              margin: 0,
-              lineHeight: 1.2,
-              fontFamily: 'inherit',
-              overflow: 'hidden',
-              zIndex: 100,
-              // Prevent the textarea from being larger than the canvas
-              maxWidth: dimensions.width - editingState.x,
-            }}
+          <Transformer
+            ref={transformerRef}
+            boundBoxFunc={(oldBox, newBox) =>
+              newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
+            }
           />
-        )}
-      </div>
+        </Layer>
+      </Stage>
+
+      {/* ── HTML textarea overlay for text editing ── */}
+      {editingState && (
+        <textarea
+          ref={textareaRef}
+          // Use value + onChange (controlled) so the committed value is always
+          // what's in editingState, not a stale DOM snapshot.
+          value={editingState.text}
+          onChange={(e) =>
+            setEditingState((prev) => prev ? { ...prev, text: e.target.value } : null)
+          }
+          onBlur={handleTextareaBlur}
+          onKeyDown={handleTextareaKeyDown}
+          style={{
+            position: 'absolute',
+            top: editingState.y,
+            left: editingState.x,
+            width: editingState.width + 24,
+            minHeight: editingState.fontSize * 1.4,
+            fontSize: editingState.fontSize,
+            color: editingState.fill,
+            transform: `rotate(${editingState.rotation}deg)`,
+            transformOrigin: 'top left',
+            background: 'rgba(255,255,255,0.92)',
+            border: '2px solid var(--accent)',
+            borderRadius: '4px',
+            outline: 'none',
+            resize: 'none',
+            padding: '2px 4px',
+            margin: 0,
+            lineHeight: 1.2,
+            fontFamily: 'var(--font)',
+            overflow: 'hidden',
+            zIndex: 100,
+            maxWidth: dimensions.width - editingState.x - 8,
+            boxShadow: '0 2px 12px rgba(99,102,241,0.2)',
+          }}
+        />
+      )}
     </div>
   );
 }
